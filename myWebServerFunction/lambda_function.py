@@ -34,14 +34,30 @@ formElem.addEventListener("submit", (ev) => {
 </html>
 """
 
+def nr_trace_context_json():
+    """Generate a distributed trace context as a JSON document"""
+    # The Python agent expects a list as an out-param
+    dt_headers = []
+    newrelic.agent.insert_distributed_trace_headers(headers=dt_headers)
+    # At this point, dt_headers is a list of tuples. We first convert it to a dict, then serialize as a JSON object.
+    # The resulting string can be used as a SQS message attribute string value.
+    return json.dumps(dict(dt_headers))
+
 def send_kinesis_message(message):
     """Turns a list of strings into a batch of records for Kinesis stream"""
     # Get the Kinesis client
     kinesis = boto3.client("kinesis")
 
+    # a Python object (dict):
+    nrData = {
+      "message": message, #.encode('utf-8'),
+      "nrDt": nr_trace_context_json()
+    }
+
+    print(json.dumps(nrData))
     return kinesis.put_record(
       StreamName='lambda-stream-NR',
-      Data=message.encode('utf-8') ,
+      Data=json.dumps(nrData),
       PartitionKey='1'
     )
 
