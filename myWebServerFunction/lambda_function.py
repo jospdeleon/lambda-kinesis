@@ -54,7 +54,7 @@ def send_kinesis_message(message):
       "nrDt": nr_trace_context_json()
     }
 
-    print(json.dumps(nrData))
+    print('RECORD: ' + json.dumps(nrData))
     return kinesis.put_record(
       StreamName='lambda-stream-NR',
       Data=json.dumps(nrData),

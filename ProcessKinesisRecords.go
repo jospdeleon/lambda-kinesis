@@ -25,6 +25,7 @@ func handler(ctx context.Context, kinesisEvent events.KinesisEvent) error {
 		if txn := newrelic.FromContext(ctx); nil != txn {
 
 			fmt.Printf("Trace Metadata BEFORE = %s %s \n", txn.GetTraceMetadata().TraceID, txn.GetTraceMetadata().SpanID)
+			fmt.Printf("Linking Metadata BEFORE = %s %s \n", txn.GetLinkingMetadata().TraceID, txn.GetLinkingMetadata().SpanID)
 
 			// unmarshal data
 			var p payload
@@ -36,9 +37,20 @@ func handler(ctx context.Context, kinesisEvent events.KinesisEvent) error {
 
 			hdrs := http.Header{}
 			hdrs.Set(newrelic.DistributedTraceNewRelicHeader, p.NrDt)
+
+			// txn.SetWebRequest(newrelic.WebRequest{
+			// 	Header:    hdrs,
+			// 	Transport: newrelic.TransportOther,
+			// })
+
 			txn.AcceptDistributedTraceHeaders(newrelic.TransportOther, hdrs)
 
 			fmt.Printf("Trace Metadata AFTER = %s %s \n", txn.GetTraceMetadata().TraceID, txn.GetTraceMetadata().SpanID)
+			fmt.Printf("Linking Metadata AFTER = %s %s \n", txn.GetLinkingMetadata().TraceID, txn.GetLinkingMetadata().SpanID)
+
+			txn.InsertDistributedTraceHeaders(hdrs)
+			fmt.Printf("Trace Metadata AFTER INSERT = %s %s \n", txn.GetTraceMetadata().TraceID, txn.GetTraceMetadata().SpanID)
+			fmt.Printf("Linking Metadata AFTER INSERT = %s %s \n", txn.GetLinkingMetadata().TraceID, txn.GetLinkingMetadata().SpanID)
 
 			txn.Application().RecordCustomEvent("MyEvent", map[string]interface{}{
 				"zip": "zap",
