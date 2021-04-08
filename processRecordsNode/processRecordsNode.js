@@ -4,8 +4,7 @@ const newrelic = require('newrelic');
 /**
  * A Lambda function that logs the payload received from Kinesis.
  */
-exports.handler = async (event, context) => {
-    console.info(JSON.stringify(event));
+exports.handler = async (event, context) => {    
     const transaction = newrelic.getTransaction();
 
     event.Records.forEach(function(record) {
@@ -23,7 +22,18 @@ exports.handler = async (event, context) => {
         "myCustomData": payloadJSON.message
       });
 
-			console.log(`${record.eventName} Data = ${payloadJSON.message} ; ${payloadJSON.nrDt} \n`)
+      const metadata = newrelic.getLinkingMetadata(true)
+      let info = {
+        eventName: record.eventName,
+        message: payloadJSON.message,
+        traceContext: payloadJSON.nrDt
+      };
+
+      Object.keys(metadata).forEach(m => {
+        info[m] = metadata[m]
+      })
+
+			console.log(JSON.stringify(info))
 
     });
 

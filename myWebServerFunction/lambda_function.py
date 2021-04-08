@@ -44,6 +44,8 @@ def nr_trace_context_json():
     return json.dumps(dict(dt_headers))
 
 def send_kinesis_message(message):
+    nrcontext = newrelic.agent.get_linking_metadata()
+
     """Turns a list of strings into a batch of records for Kinesis stream"""
     # Get the Kinesis client
     kinesis = boto3.client("kinesis")
@@ -54,7 +56,9 @@ def send_kinesis_message(message):
       "nrDt": nr_trace_context_json()
     }
 
-    print('RECORD: ' + json.dumps(nrData))
+    log_message = {"message": 'RECORD: ' + json.dumps(nrData)}
+    log_message.update(nrcontext)
+    print(json.dumps(log_message))
     return kinesis.put_record(
       StreamName='lambda-stream-NR',
       Data=json.dumps(nrData),
@@ -62,8 +66,11 @@ def send_kinesis_message(message):
     )
 
 def lambda_handler(event, context):
+    nrcontext = newrelic.agent.get_linking_metadata()
+
     if event['httpMethod'] == 'GET':
         print('inside GET')
+
         # For our example, we return a static HTML page in response to GET requests
         return {
             "statusCode": 200,
@@ -74,7 +81,10 @@ def lambda_handler(event, context):
             "body": GET_RESPONSE
         }
     elif event['httpMethod'] == 'POST':
-        print('inside POST')
+        log_message = {"message": "inside POST"}
+        log_message.update(nrcontext)
+        print(json.dumps(log_message))
+
         message = event['body']
         newrelic.agent.add_custom_parameter('myMessage', message)
         
