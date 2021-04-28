@@ -8,8 +8,10 @@ import (
 	"os"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/newrelic/go-agent/v3/integrations/logcontext/nrlogrusplugin"
 	"github.com/newrelic/go-agent/v3/integrations/nrlambda"
 	"github.com/newrelic/go-agent/v3/newrelic"
+	"github.com/sirupsen/logrus"
 )
 
 type payload struct {
@@ -73,7 +75,12 @@ func handler(ctx context.Context, kinesisEvent events.KinesisEvent) error {
 			// This attribute gets added to the normal AwsLambdaInvocation event
 			txn.AddAttribute("myCustomData", p.Message)
 
-			fmt.Printf("%s Data = %s %s \n", record.EventName, p.Message, p.NrDt)
+			//logs in context
+			log := logrus.New()
+			log.SetFormatter(nrlogrusplugin.ContextFormatter{})
+			log.WithContext(ctx).Info("Data from " + record.EventName + " = " + p.Message)
+
+			// fmt.Printf("%s Data = %s %s \n", record.EventName, p.Message, p.NrDt)
 		}
 	}
 	return nil
