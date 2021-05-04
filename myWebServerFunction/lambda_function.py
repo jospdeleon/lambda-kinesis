@@ -1,6 +1,7 @@
 import json
 import boto3
 import newrelic
+import os
 
 GET_RESPONSE = """
 <html>
@@ -11,6 +12,10 @@ GET_RESPONSE = """
 <form id="post_me" name="post_me" method="POST" action="">
     <label for="message">Message</label>
     <input id="message" name="message" type="text" value="Hello world" />
+    <select id="stream" name="stream">
+        <option value="go">Go</option>
+        <option value="node">Node</option>
+    </select>
     <button type="submit" name="submit">Submit</button>
 </form>
 <div id="output" style="white-space: pre-wrap; font-family: monospace;">
@@ -18,10 +23,18 @@ GET_RESPONSE = """
 <script>
 const formElem = document.getElementById("post_me");
 const messageElem = document.getElementById("message");
+const streamElem = document.getElementById("stream");
 formElem.addEventListener("submit", (ev) => {
+    let data = {
+        message: messageElem.value,
+        stream: streamElem.value
+    }
     fetch(location.href, {
         "method": "POST",
-        "body": messageElem.value
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        "body": JSON.stringify(data)
     })
     .then(resp => resp.text())
     .then(body => {
@@ -40,27 +53,33 @@ def nr_trace_context_json():
     dt_headers = []
     newrelic.agent.insert_distributed_trace_headers(headers=dt_headers)
     # At this point, dt_headers is a list of tuples. We first convert it to a dict, then serialize as a JSON object.
-    # The resulting string can be used as a SQS message attribute string value.
+    # The resulting string can be used as a kinesis record attribute string value.
     return json.dumps(dict(dt_headers))
 
-def send_kinesis_message(message):
+def send_kinesis_message(message, stream):
     nrcontext = newrelic.agent.get_linking_metadata()
 
-    """Turns a list of strings into a batch of records for Kinesis stream"""
     # Get the Kinesis client
     kinesis = boto3.client("kinesis")
 
     # a Python object (dict):
     nrData = {
-      "message": message, #.encode('utf-8'),
+      "message": message,
       "nrDt": nr_trace_context_json()
     }
 
-    log_message = {"message": 'RECORD: ' + json.dumps(nrData)}
+    # Logs in context example using the agent API
+    log_message = {"message": 'RECORD: ' + nrData['message']}
     log_message.update(nrcontext)
     print(json.dumps(log_message))
+
+    streamArn = 'lambda-stream-NR'
+    if stream == 'go':
+        streamArn = os.environ.get('GO_STREAM')
+    # elif stream == 'node':
+
     return kinesis.put_record(
-      StreamName='lambda-stream-NR',
+      StreamName = streamArn,
       Data=json.dumps(nrData),
       PartitionKey='1'
     )
@@ -81,15 +100,18 @@ def lambda_handler(event, context):
             "body": GET_RESPONSE
         }
     elif event['httpMethod'] == 'POST':
+        # Logs in context example using the agent API
         log_message = {"message": "inside POST"}
         log_message.update(nrcontext)
         print(json.dumps(log_message))
 
-        message = event['body']
+        data = json.loads(event['body'])
+        message = data['message']
+        stream = data['stream']
         newrelic.agent.add_custom_parameter('myMessage', message)
         
-        # Handle POST requests by splitting the post body into words, and sending each as an SQS message
-        send_status = send_kinesis_message(message)
+        # Handle POST requests by sending the message into a kinesis stream
+        send_status = send_kinesis_message(message, stream)
         # Returns the raw batch status. A real application would want to process the API response.
         return {
             "statusCode": 200,
