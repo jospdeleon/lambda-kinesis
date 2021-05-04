@@ -9,6 +9,7 @@ echo "region set to ${region}"
 # against the "provided" runtime. The aws-lambda-go SDK provides a build tag that makes this easy.
 runtime="provided"
 
+cd processRecordsGo/
 echo "Building stand-alone lambda"
 build_tags="-tags lambda.norpc"
 
@@ -16,13 +17,17 @@ build_tags="-tags lambda.norpc"
 handler="bootstrap"
 
 env GOARCH=amd64 GOOS=linux go build ${build_tags} -ldflags="-s -w" -o ${handler}
-zip ProcessKinesisRecords-NR.zip "${handler}"
+zip processRecordsGo.zip "${handler}"
 
-bucket="process-kinesis-records-${region}-${accountId}"
+bucket="process-records-go-${region}-${accountId}"
 aws s3 mb --region ${region} s3://${bucket}
-aws s3 cp ProcessKinesisRecords-NR.zip s3://${bucket}
+aws s3 cp processRecordsGo.zip s3://${bucket}
+
+# Go back to root folder
+cd ..
+
 aws cloudformation deploy --region ${region} \
   --template-file template.yaml \
-  --stack-name ProcessKinesisRecords-NR \
+  --stack-name processRecords-Go \
   --capabilities CAPABILITY_IAM \
   --parameter-overrides "NRAccountId=${accountId}"

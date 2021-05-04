@@ -9,14 +9,14 @@ Parameters:
     AllowedPattern: '[0-9]+'
 
 Resources:
-  ProcessKinesisRecordsNR:
+  processRecordsGo:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri:
-        Bucket: !Sub process-kinesis-records-${AWS::Region}-${NRAccountId}
-        Key: ProcessKinesisRecords-NR.zip
+        Bucket: !Sub process-records-go-${AWS::Region}-${NRAccountId}
+        Key: processRecordsGo.zip
       Description: A simple Lambda and Kinesis, with New Relic telemetry
-      FunctionName: ProcessKinesisRecords-NR
+      FunctionName: processRecords-Go
       # For go1.x, the handler is the name of your go executable. With the norpc option, it is ignored.
       Handler: handler
       Runtime: provided
@@ -24,8 +24,10 @@ Resources:
         Variables:
           NEW_RELIC_ACCOUNT_ID: !Sub ${NRAccountId}
           NEW_RELIC_TRUSTED_ACCOUNT_KEY: !Sub ${NRAccountId}
-          # NEW_RELIC_EXTENSION_SEND_FUNCTION_LOGS: true
-          # NEW_RELIC_EXTENSION_LOG_LEVEL: DEBUG
+          NEW_RELIC_PRIMARY_APPLICATION_ID: !Sub ${NRAccountId}
+          NEW_RELIC_EXTENSION_SEND_FUNCTION_LOGS: true
+          NEW_RELIC_EXTENSION_LOG_LEVEL: DEBUG
+          GO_STREAM: !Ref LambdaGoStream
       Layers:
         # This layer includes the New Relic Lambda Extension, a sidecar process that sends telemetry
         - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:451483290750:layer:NewRelicLambdaExtension:7
@@ -34,9 +36,29 @@ Resources:
         # that we can send telemetry back to New Relic
         - AWSSecretsManagerGetSecretValuePolicy:
             SecretArn: !ImportValue NewRelicLicenseKeySecret-NewRelic-LicenseKeySecretARN
+        - AWSLambdaKinesisExecutionRole
+      Events:
+        Stream:
+          Type: Kinesis
+          Properties:
+            Stream: !GetAtt LambdaGoStream.Arn
+            BatchSize: 100
+            StartingPosition: LATEST
+  LambdaGoStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      ShardCount: 1
   Logs:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: {"Fn::Join": ["", ["/aws/lambda/", {"Ref": "ProcessKinesisRecordsNR"}]]}
+      LogGroupName: {"Fn::Join": ["", ["/aws/lambda/", {"Ref": "processRecordsGo"}]]}
       # Lambda functions will auto-create their log group on first execution, but it retains logs forever, which can get expensive.
       RetentionInDays: 7
+
+Outputs:
+  FunctionName:
+    Description: "processRecords-Go Lambda function"
+    Value: !Ref processRecordsGo
+  StreamARN:
+    Description: "Kinesis stream trigger for processRecords-Go"
+    Value: !GetAtt LambdaGoStream.Arn
