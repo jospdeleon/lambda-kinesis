@@ -1,2 +1,4 @@
 out.txt
 processRecordsNode/node_modules/
+*.zip
+bootstrap
