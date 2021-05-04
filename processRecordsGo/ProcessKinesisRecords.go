@@ -30,9 +30,6 @@ func handler(ctx context.Context, kinesisEvent events.KinesisEvent) error {
 
 		if txn := newrelic.FromContext(ctx); nil != txn {
 
-			fmt.Printf("Trace Metadata BEFORE = %s %s \n", txn.GetTraceMetadata().TraceID, txn.GetTraceMetadata().SpanID)
-			fmt.Printf("Linking Metadata BEFORE = %s %s \n", txn.GetLinkingMetadata().TraceID, txn.GetLinkingMetadata().SpanID)
-
 			// unmarshal data
 			var p payload
 			err := json.Unmarshal(kinesisRecord.Data, &p)
@@ -50,32 +47,22 @@ func handler(ctx context.Context, kinesisEvent events.KinesisEvent) error {
 			}
 
 			hdrs := http.Header{}
-			// hdrs.Set(newrelic.DistributedTraceNewRelicHeader, p.NrDt)
 			hdrs.Set(newrelic.DistributedTraceNewRelicHeader, np.Newrelic)
-
-			// txn.SetWebRequest(newrelic.WebRequest{
-			// 	Header:    hdrs,
-			// 	Transport: newrelic.TransportOther,
-			// })
 
 			fmt.Printf("HDRS value = %s \n", hdrs)
 			txn.AcceptDistributedTraceHeaders(newrelic.TransportOther, hdrs)
 
-			fmt.Printf("Trace Metadata AFTER = %s %s \n", txn.GetTraceMetadata().TraceID, txn.GetTraceMetadata().SpanID)
-			fmt.Printf("Linking Metadata AFTER = %s %s \n", txn.GetLinkingMetadata().TraceID, txn.GetLinkingMetadata().SpanID)
-
 			txn.InsertDistributedTraceHeaders(hdrs)
-			fmt.Printf("Trace Metadata AFTER INSERT = %s %s \n", txn.GetTraceMetadata().TraceID, txn.GetTraceMetadata().SpanID)
-			fmt.Printf("Linking Metadata AFTER INSERT = %s %s \n", txn.GetLinkingMetadata().TraceID, txn.GetLinkingMetadata().SpanID)
 
-			txn.Application().RecordCustomEvent("MyEvent", map[string]interface{}{
-				"zip": "zap",
-			})
+			// If you need to record a custom event
+			// txn.Application().RecordCustomEvent("MyEvent", map[string]interface{}{
+			// 	"zip": "zap",
+			// })
 
 			// This attribute gets added to the normal AwsLambdaInvocation event
 			txn.AddAttribute("myCustomData", p.Message)
 
-			//logs in context
+			// Logs in context example using logrus and nrlogrusplugin
 			log := logrus.New()
 			log.SetFormatter(nrlogrusplugin.ContextFormatter{})
 			log.WithContext(ctx).Info("Data from " + record.EventName + " = " + p.Message)

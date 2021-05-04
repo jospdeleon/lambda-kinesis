@@ -22,6 +22,7 @@ exports.handler = async (event, context) => {
         "myCustomData": payloadJSON.message
       });
 
+      // Logs in context example using the agent API
       const metadata = newrelic.getLinkingMetadata(true)
       let info = {
         eventName: record.eventName,
