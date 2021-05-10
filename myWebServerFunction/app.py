@@ -73,10 +73,11 @@ def send_kinesis_message(message, stream):
     log_message.update(nrcontext)
     print(json.dumps(log_message))
 
-    streamArn = 'lambda-stream-NR'
+    streamArn = ''
     if stream == 'go':
         streamArn = os.environ.get('GO_STREAM')
-    # elif stream == 'node':
+    elif stream == 'node':
+        streamArn = os.environ.get('NODE_STREAM')
 
     return kinesis.put_record(
       StreamName = streamArn,
