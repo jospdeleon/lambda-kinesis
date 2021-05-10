@@ -26,8 +26,16 @@ aws s3 cp processRecordsGo.zip s3://${bucket}
 # Go back to root folder
 cd ..
 
+sam build --use-container #--skip-pull-image
+
+bucket="lambda-kinesis-${region}-${accountId}"
+
+aws s3 mb --region ${region} s3://${bucket}
+
+sam package --region ${region} --s3-bucket=${bucket} --output-template-file packaged.yaml
+
 aws cloudformation deploy --region ${region} \
-  --template-file template.yaml \
-  --stack-name processRecords-Go \
+  --template-file packaged.yaml \
+  --stack-name processRecords \
   --capabilities CAPABILITY_IAM \
   --parameter-overrides "NRAccountId=${accountId}"

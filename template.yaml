@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: An example of a simple instrumented Go Lambda
+Description: An example of instrumented Lambda functions with DT and LiC
 
 Parameters:
   NRAccountId:
@@ -15,7 +15,7 @@ Resources:
       CodeUri:
         Bucket: !Sub process-records-go-${AWS::Region}-${NRAccountId}
         Key: processRecordsGo.zip
-      Description: A simple Lambda and Kinesis, with New Relic telemetry
+      Description: A simple Go Lambda and Kinesis trigger, with New Relic telemetry
       FunctionName: processRecords-Go
       # For go1.x, the handler is the name of your go executable. With the norpc option, it is ignored.
       Handler: handler
@@ -26,11 +26,10 @@ Resources:
           NEW_RELIC_TRUSTED_ACCOUNT_KEY: !Sub ${NRAccountId}
           NEW_RELIC_PRIMARY_APPLICATION_ID: !Sub ${NRAccountId}
           NEW_RELIC_EXTENSION_SEND_FUNCTION_LOGS: true
-          NEW_RELIC_EXTENSION_LOG_LEVEL: DEBUG
-          GO_STREAM: !Ref LambdaGoStream
+          # NEW_RELIC_EXTENSION_LOG_LEVEL: DEBUG
       Layers:
         # This layer includes the New Relic Lambda Extension, a sidecar process that sends telemetry
-        - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:451483290750:layer:NewRelicLambdaExtension:7
+        - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:451483290750:layer:NewRelicLambdaExtension:11
       Policies:
         # This policy allows the lambda to know the value of the New Relic licence key. We need this so
         # that we can send telemetry back to New Relic
@@ -48,17 +47,115 @@ Resources:
     Type: AWS::Kinesis::Stream
     Properties:
       ShardCount: 1
-  Logs:
+  GoLogs:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: {"Fn::Join": ["", ["/aws/lambda/", {"Ref": "processRecordsGo"}]]}
       # Lambda functions will auto-create their log group on first execution, but it retains logs forever, which can get expensive.
       RetentionInDays: 7
 
+  pythonWebServer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: myWebServerFunction/
+      Description: A simple Python Lambda exposed via API Gateway, with New Relic telemetry
+      Handler: newrelic_lambda_wrapper.handler
+      Runtime: python3.8
+      Environment:
+        Variables:
+          # For the instrumentation handler to invoke your real handler, we need this value
+          NEW_RELIC_LAMBDA_HANDLER: app.lambda_handler
+          NEW_RELIC_ACCOUNT_ID: !Sub ${NRAccountId}
+          NEW_RELIC_TRUSTED_ACCOUNT_KEY: !Sub ${NRAccountId}
+          NEW_RELIC_EXTENSION_SEND_FUNCTION_LOGS: true
+          GO_STREAM: !Ref LambdaGoStream
+          NODE_STREAM: !Ref LambdaNodeStream
+          # NEW_RELIC_EXTENSION_LOG_LEVEL: DEBUG
+      Layers:
+        # This layer includes the New Relic Lambda Extension, a sidecar process that sends telemetry,
+        # as well as the New Relic Agent for Python, and a handler wrapper that makes integration easy.
+        - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:451483290750:layer:NewRelicPython38:37
+      Policies:
+        # This policy allows the lambda to know the value of the New Relic license key. We need this so
+        # that we can send telemetry back to New Relic
+        - AWSSecretsManagerGetSecretValuePolicy:
+            SecretArn: !ImportValue NewRelicLicenseKeySecret-NewRelic-LicenseKeySecretARN
+        - AmazonKinesisFullAccess
+      Events:
+        pythonSubmit:
+          Type: Api
+          Properties:
+            Path: /hello
+            Method: POST
+        pythonWebPage:
+          Type: Api
+          Properties:
+            Path: /hello
+            Method: GET
+  PythonLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: {"Fn::Join": ["", ["/aws/lambda/", {"Ref": "pythonWebServer"}]]}
+      # Lambda functions will auto-create their log group on first execution, but it retains logs forever, which can get expensive.
+      RetentionInDays: 7
+
+  processRecordsNode:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: A simple Node Lambda and Kinesis trigger, with New Relic telemetry
+      Runtime: nodejs12.x
+      CodeUri: processRecordsNode/
+      Handler: newrelic-lambda-wrapper.handler
+      Environment:
+        Variables:
+          # For the instrumentation handler to invoke your real handler, we need this value
+          NEW_RELIC_LAMBDA_HANDLER: processRecordsNode.handler
+          NEW_RELIC_ACCOUNT_ID: !Sub ${NRAccountId}
+          NEW_RELIC_TRUSTED_ACCOUNT_KEY: !Sub ${NRAccountId}
+          NEW_RELIC_EXTENSION_SEND_FUNCTION_LOGS: true
+          # NEW_RELIC_EXTENSION_LOG_LEVEL: DEBUG
+      Events:
+        Stream:
+          Type: Kinesis
+          Properties:
+            Stream: !GetAtt LambdaNodeStream.Arn
+            BatchSize: 100
+            StartingPosition: LATEST
+      MemorySize: 128
+      Layers:
+        # This layer includes the New Relic Lambda Extension, a sidecar process that sends telemetry,
+        # as well as the New Relic Agent for Node.js, and a handler wrapper that makes integration easy.
+        - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:451483290750:layer:NewRelicNodeJS12X:41
+      Policies:
+        # This policy allows the lambda to know the value of the New Relic licence key. We need this so
+        # that we can send telemetry back to New Relic
+        - AWSSecretsManagerGetSecretValuePolicy:
+            SecretArn: !ImportValue NewRelicLicenseKeySecret-NewRelic-LicenseKeySecretARN
+        - AWSLambdaKinesisExecutionRole
+  LambdaNodeStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      ShardCount: 1
+  NodeLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: {"Fn::Join": ["", ["/aws/lambda/", {"Ref": "processRecordsNode"}]]}
+      # Lambda functions will auto-create their log group on first execution, but it retains logs forever, which can get expensive.
+      RetentionInDays: 7
+
 Outputs:
-  FunctionName:
-    Description: "processRecords-Go Lambda function"
+  GoFunction:
+    Description: "Go Lambda function for processing kinesis stream records"
     Value: !Ref processRecordsGo
-  StreamARN:
+  GoStream:
     Description: "Kinesis stream trigger for processRecords-Go"
     Value: !GetAtt LambdaGoStream.Arn
+  NodeFunction:
+    Description: "Node Lambda function for processing kinesis stream records"
+    Value: !Ref processRecordsNode
+  NodeStream:
+    Description: "Kinesis stream trigger for processRecordsNode"
+    Value: !GetAtt LambdaNodeStream.Arn
+  PythonApi:
+    Description: "API Gateway endpoint URL for Prod stage for Python Lambda function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello/"
